@@ -16,6 +16,12 @@ contract Market {
     // Mapping to track users' borrowed amounts for each borrowable token
     mapping(address => mapping(address => uint256)) public borrowedAmount; // User -> Token -> Amount
 
+    // Event for adding borrowable asset vault
+    event BorrowableVaultAdded(
+        address indexed borrowableToken,
+        address indexed vault
+    );
+
     // Event for depositing collateral
     event CollateralDeposited(
         address indexed user,
@@ -30,6 +36,28 @@ contract Market {
     );
 
     constructor() {}
+
+    // Function to add a borrowable vault to the market
+    function addBorrowableVault(
+        address borrowableToken,
+        address vault
+    ) external {
+        require(
+            borrowableToken != address(0),
+            "Invalid borrowable token address"
+        );
+        require(vault != address(0), "Invalid vault address");
+        require(
+            borrowableVaults[borrowableToken] == address(0),
+            "Vault already exists for this borrowable asset"
+        );
+
+        // Add the vault to the borrowableVaults mapping
+        borrowableVaults[borrowableToken] = vault;
+
+        // Emit an event to log the addition of the borrowable vault
+        emit BorrowableVaultAdded(borrowableToken, vault);
+    }
 
     function addCollateralVault(
         address collateralToken,
