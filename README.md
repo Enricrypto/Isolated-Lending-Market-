@@ -20,6 +20,7 @@ Users can borrow assets against their collateral, provided they stay within the 
 Borrowing power is dynamically calculated, taking into account the user's collateral balance, LTV ratio, and existing debt.
 
 4. Collateral Utilization:
+
 The contract tracks the percentage of collateral utilized as debt.
 This metric helps users monitor their risk levels and avoid overleveraging.
 
@@ -41,3 +42,5 @@ The protocol is designed to eventually separate functionality into modular compo
 Liquidation Module: To handle collateral liquidation in cases of overleveraging.
 
 <img width="641" alt="Isolated Lending Market Architecture" src="https://github.com/user-attachments/assets/60e0c870-a229-4a5c-82eb-0d8eabf34b9a" />
+
+<img width="399" alt="Screenshot 2025-01-28 at 14 57 57" src="https://github.com/user-attachments/assets/e1bf6419-0b92-4a05-b50e-d4e1e0aa8c6f" />
