@@ -65,11 +65,11 @@ contract Market {
         require(ltvRatio <= 100, "LTV ratio cannot exceed 100");
         require(ltvRatio > 0, "LTV ratio must be greater than 0");
 
+        // Set the LTV ratio before adding the vault
+        setLTVRatio(borrowableToken, ltvRatio);
+
         // Add the vault to the borrowableVaults mapping
         borrowableVaults[borrowableToken] = vault;
-
-        // Set the LTV ratio for the borrowable token
-        ltvRatios[borrowableToken] = ltvRatio;
 
         // Emit events for logging
         emit BorrowableVaultAdded(borrowableToken, vault);
