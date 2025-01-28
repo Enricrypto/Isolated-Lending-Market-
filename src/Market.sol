@@ -38,8 +38,8 @@ contract Market {
 
     // Event for adding a collateral vault
     event CollateralVaultAdded(
-        address indexed collateralToken, // The address of the collateral token
-        address indexed vault // The address of the vault contract for this token
+        address indexed collateralToken,
+        address indexed vault
     );
 
     // Event for setting LTV ratio for a borrowable token
