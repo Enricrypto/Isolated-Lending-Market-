@@ -29,6 +29,13 @@ contract Market {
         uint256 amount
     );
 
+    // Event for withdrawing collateral
+    event CollateralWithdrawn(
+        address indexed user,
+        address indexed collateralToken,
+        uint256 amount
+    );
+
     // Event for adding a collateral vault
     event CollateralVaultAdded(
         address indexed collateralToken, // The address of the collateral token
@@ -107,7 +114,30 @@ contract Market {
         return shares;
     }
 
+    function withdrawCollateral(
+        address collateralToken,
+        uint256 amount
+    ) external returns (uint256 shares) {
+        // Ensure the vault exists for this collateral token
+        require(
+            collateralVaults[collateralToken] != address(0),
+            "Vault not found for this collateral"
+        );
+
+        // Get the vault for the collateral token
+        Vault vault = Vault(collateralVaults[collateralToken]);
+
+        // Withdraw the collateral from the vault and burn shares of the user
+        shares = vault.withdraw(amount, msg.sender, msg.sender);
+
+        // Emit an event for logging
+        emit CollateralWithdrawn(msg.sender, collateralToken, amount);
+
+        return shares;
+    }
+
     // Function to set the LTV ratio for a borrowable token
+    // We will keep this simple for now as we are not using an oracle yet
     function setLTVRatio(address borrowableToken, uint256 ratio) external {
         ltvRatios[borrowableToken] = ratio;
 
