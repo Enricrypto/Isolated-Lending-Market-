@@ -66,6 +66,17 @@ contract MarketTest is Test {
         vm.stopPrank();
     }
 
+    function testAddBorrowableVault() public {
+        address borrowableToken = address(0x1234); // Example token address
+        address vault = address(0x5678); // Example vault address
+
+        // Add the borrowable vault to the market
+        market.addBorrowableVault(borrowableToken, vault);
+
+        // Assert that the borrowableVaults mapping is updated correctly
+        assertEq(market.borrowableVaults(borrowableToken), vault);
+    }
+
     // Test to check if the DAI token is correctly mapped to the vault address
     function testCollateralVaultRegistration() public view {
         // Retrieve the vault address for the DAI token from the market contract
