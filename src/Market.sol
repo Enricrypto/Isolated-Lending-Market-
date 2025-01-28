@@ -35,12 +35,16 @@ contract Market {
         address indexed vault // The address of the vault contract for this token
     );
 
+    // Event for setting LTV ratio for a borrowable token
+    event LTVRatioSet(address indexed borrowableToken, uint256 ltvRatio);
+
     constructor() {}
 
     // Function to add a borrowable vault to the market
     function addBorrowableVault(
         address borrowableToken,
-        address vault
+        address vault,
+        uint256 ltvRatio
     ) external {
         require(
             borrowableToken != address(0),
@@ -51,12 +55,18 @@ contract Market {
             borrowableVaults[borrowableToken] == address(0),
             "Vault already exists for this borrowable asset"
         );
+        require(ltvRatio <= 100, "LTV ratio cannot exceed 100");
+        require(ltvRatio > 0, "LTV ratio must be greater than 0");
 
         // Add the vault to the borrowableVaults mapping
         borrowableVaults[borrowableToken] = vault;
 
-        // Emit an event to log the addition of the borrowable vault
+        // Set the LTV ratio for the borrowable token
+        ltvRatios[borrowableToken] = ltvRatio;
+
+        // Emit events for logging
         emit BorrowableVaultAdded(borrowableToken, vault);
+        emit LTVRatioSet(borrowableToken, ltvRatio);
     }
 
     function addCollateralVault(
@@ -95,5 +105,19 @@ contract Market {
         emit CollateralDeposited(msg.sender, collateralToken, amount);
 
         return shares;
+    }
+
+    // Function to set the LTV ratio for a borrowable token
+    function setLTVRatio(address borrowableToken, uint256 ratio) external {
+        ltvRatios[borrowableToken] = ratio;
+
+        emit LTVRatioSet(borrowableToken, ratio);
+    }
+
+    // Function to get the LTV ratio for a borrowable token
+    function getLTVRatio(
+        address borrowableToken
+    ) external view returns (uint256) {
+        return ltvRatios[borrowableToken];
     }
 }
