@@ -25,6 +25,12 @@ contract Market {
         address indexed vault
     );
 
+    // Event for adding a collateral vault
+    event CollateralVaultAdded(
+        address indexed collateralToken,
+        address indexed vault
+    );
+
     // Event for depositing collateral
     event CollateralDeposited(
         address indexed user,
@@ -39,10 +45,18 @@ contract Market {
         uint256 amount
     );
 
-    // Event for adding a collateral vault
-    event CollateralVaultAdded(
-        address indexed collateralToken,
-        address indexed vault
+    // Event for depositing collateral
+    event BorrowableDeposited(
+        address indexed user,
+        address indexed borrowableToken,
+        uint256 amount
+    );
+
+    // Event for withdrawing collateral
+    event BorrowableWithdrawn(
+        address indexed user,
+        address indexed borrowableToken,
+        uint256 amount
     );
 
     // Event for borrowed
@@ -150,6 +164,50 @@ contract Market {
         return shares;
     }
 
+    function depositBorrowable(
+        address borrowableToken,
+        uint256 amount
+    ) external returns (uint256 shares) {
+        // Ensure the vault exists for this borrowable token
+        require(
+            borrowableVaults[borrowableToken] != address(0),
+            "Vault not found for this borrowable"
+        );
+
+        // Get the vault for the borrowable token
+        Vault vault = Vault(borrowableVaults[borrowableToken]);
+
+        // Deposit the borrowable into the vault and mint shares for the user
+        shares = vault.deposit(amount, msg.sender);
+
+        // Emit an event for logging
+        emit BorrowableDeposited(msg.sender, borrowableToken, amount);
+
+        return shares;
+    }
+
+    function withdrawBorrowable(
+        address borrowableToken,
+        uint256 amount
+    ) external returns (uint256 shares) {
+        // Ensure the vault exists for this borrowable token
+        require(
+            borrowableVaults[borrowableToken] != address(0),
+            "Vault not found for this borrowable"
+        );
+
+        // Get the vault for the borrowable token
+        Vault vault = Vault(borrowableVaults[borrowableToken]);
+
+        // Withdraw the borrowable from the vault and burn shares of the user
+        shares = vault.withdraw(amount, msg.sender, msg.sender);
+
+        // Emit an event for logging
+        emit CollateralWithdrawn(msg.sender, borrowableToken, amount);
+
+        return shares;
+    }
+
     function borrow(address borrowableToken, uint256 amount) external {
         // Ensure borrowable token is supported
         require(
@@ -175,8 +233,12 @@ contract Market {
         // Update borrowed amount tracking
         borrowedAmount[msg.sender][borrowableToken] += amount;
 
-        // Transfer borrowable asset to user
-        IERC20(borrowableToken).transfer(msg.sender, amount);
+        // Ensure the vault has enough borrowable funds to lend
+        uint256 availableFunds = vault.totalAssets(); // Check vault balance
+        require(availableFunds >= amount, "Insufficient funds in vault");
+
+        // Directly transfer the borrowable token to the user without burning shares
+        vault.withdrawForBorrower(amount, msg.sender);
 
         // Emit event for borrowed
         emit Borrowed(msg.sender, borrowableToken, amount);

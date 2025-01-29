@@ -41,4 +41,22 @@ contract Vault is ERC4626 {
 
         return shares;
     }
+
+    function withdrawForBorrower(
+        uint256 assets,
+        address receiver
+    ) external returns (uint256 shares) {
+        // Ensure the vault has enough funds for the withdrawal
+        // asset() is a built-in function that point to the asset that the vault holds
+        uint256 availableAssets = IERC20(asset()).balanceOf(address(this));
+        require(availableAssets >= assets, "Insufficient funds in vault");
+
+        // Transfer the assets to the borrower (without burning shares)
+        IERC20(asset()).transfer(receiver, assets);
+
+        // Emit event for withdrawal
+        emit Withdraw(msg.sender, assets);
+
+        return assets; // Return the amount withdrawn
+    }
 }
