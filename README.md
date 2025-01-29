@@ -1,46 +1,74 @@
-# Isolated Lending Market
-Isolated, Modular and Permissionless 
+# Overview
+The Isolated Lending Market Protocol is a modular, extendable, and permissionless lending platform built on Solidity. It provides a flexible framework for decentralized lending, enabling users to deposit collateral, borrow assets, and lend tokens within isolated, individual markets. The protocol is built with scalability in mind, ensuring future flexibility through modular contract design and allowing for easy upgrades and expansion.
 
-# Lending Protocol
-*Overview* 
-This project is a modular and extendable lending protocol built on Solidity. It begins with a single smart contract that handles core operations such as deposits, withdrawals, borrowing, and collateral management. The protocol is designed to evolve into a modular architecture, eventually separating core logic into distinct contracts for better scalability and maintainability.
+# Key Features
+1. ERC-4626 Vault Implementation
+The protocol uses the ERC-4626 standard for vaults, which enables seamless management of assets and vault shares. Users can deposit and withdraw assets within the vaults while receiving shares that represent their stake in the vault.
 
-# Current Functionality
-*Core Features*
-1. ERC-4626 Vault Implementation:
-The contract is built on the ERC-4626 standard, which allows users to deposit and withdraw assets while issuing shares representing their ownership of the vault.
-This ensures seamless management of vault shares and assets.
+2. Collateral Management
+Users can deposit collateral into the market for borrowing.
+Collateral is tracked on a per-user and per-collateral-token basis.
+The protocol calculates the maximum borrowing power based on the collateral value and a predefined Loan-to-Value (LTV) ratio.
+The protocol also tracks the collateral utilization to help users monitor their risk levels.
 
-2. Collateral Management:
-Users can deposit collateral into the vault, which is tracked individually for each user.
-The protocol calculates the maximum borrowing power for users based on their collateral and a predefined Loan-to-Value (LTV) ratio.
+3. Borrowing and Debt Management
+Users can borrow assets against their collateral, as long as they remain within the allowable LTV ratio.
+Borrowing power is dynamically calculated based on the user's collateral balance and current debt.
+The protocol ensures that users can only borrow up to a percentage of their collateral's value, preventing over-leveraging.
 
-3. Borrowing and Debt Management:
-Users can borrow assets against their collateral, provided they stay within the allowable LTV ratio.
-Borrowing power is dynamically calculated, taking into account the user's collateral balance, LTV ratio, and existing debt.
+4. Lending and Borrowable Vaults
+Users can lend assets by depositing them into the borrowable vaults (ERC-4626), where they earn vault shares in return for their deposits.
+Borrowable assets are stored in separate vaults, each linked to a specific token.
+When users deposit loan tokens into the vault, the contract tracks the amount lent by each user.
 
-4. Collateral Utilization:
+5. Modular and Permissionless
+The protocol is built to be modular, with the ability to add new collateral types, borrowable tokens, and vaults.
+It is designed to support permissionless interaction, where anyone can contribute by adding new collateral types or implementing new borrowable assets.
 
-The contract tracks the percentage of collateral utilized as debt.
-This metric helps users monitor their risk levels and avoid overleveraging.
+# Core Contract Functions: 
 
-5. Key Functions
-- deposit(uint256 amount): Allows users to deposit assets into the vault, increasing their collateral balance and minting vault shares.
+1. Deposit and Withdraw Tokens
+deposit(uint256 amount): Allows users to deposit collateral or loan tokens into a vault, increasing their balance and minting corresponding vault shares.
+withdraw(uint256 amount): Allows users to withdraw collateral or loan tokens from a vault, reducing their balance and burning corresponding vault shares.
 
-- withdraw(uint256 amount): Lets users withdraw assets from their collateral balance, provided they stay within the borrowing constraints set by the LTV ratio.
+2. Borrowing
+borrow(address borrowableToken, uint256 amount): Allows users to borrow a specified amount of a borrowable token, provided they stay within their available borrowing power based on their collateral and LTV ratio.
 
-- getBorrowingPower(address user): Calculates how much more a user can borrow based on their collateral balance, LTV ratio, and current debt.
+3. Collateral Management
+depositCollateral(address collateralToken, uint256 amount): Allows users to deposit collateral into the market, which is tracked individually for each user and collateral type.
+withdrawCollateral(address collateralToken, uint256 amount): Allows users to withdraw collateral from the market, as long as they stay within their borrowing constraints (LTV ratio).
 
-- getUtilization(address user): Returns the percentage of a user's collateral currently utilized as debt.
+4. LTV Ratio and Borrowing Power
+setLTVRatio(address borrowableToken, uint256 ratio): Admin function to set the Loan-to-Value (LTV) ratio for a specific borrowable token.
+getLTVRatio(address borrowableToken): Retrieves the LTV ratio for a borrowable token.
+getBorrowingPower(address user): Calculates the maximum amount a user can borrow, based on their collateral balance and LTV ratio.
 
-*Future Enhancements*
-The protocol is designed to eventually separate functionality into modular components:
+5. Supporting Functions
+getTotalCollateralValue(address user): Returns the total collateral value of a user, considering all collateral tokens they have deposited (can later incorporate price oracles).
+getCollateralTokens(): Returns the list of collateral tokens supported by the market.
 
-- Oracle Module: For dynamic price feeds of collateral and borrowed assets.
+# Future Enhancements
+The protocol is designed with modularity in mind, and future enhancements will include the separation of core functionality into distinct modules:
 
-- Interest Rate Module: To calculate interest rates for borrowers.
-- Factory Module: To enable deployment of new lending markets with customizable parameters.
-Liquidation Module: To handle collateral liquidation in cases of overleveraging.
+*Oracle Module*: For providing dynamic price feeds of collateral and borrowed assets.
+*Interest Rate Module*: For calculating interest rates for borrowers.
+*Factory Module*: For enabling the deployment of new lending markets with customizable parameters.
+*Liquidation Module*: For handling the liquidation of collateral in cases of over-leveraging or default.
+
+# Smart Contract Architecture
+*Vault Contract (ERC-4626)*
+The Vault contract is the foundation for managing the deposit and withdrawal of tokens. It adheres to the ERC-4626 standard, which ensures compatibility with any ERC-20 token that can be deposited or withdrawn.
+
+Deposit: When users deposit tokens, they receive vault shares in return, representing their ownership in the vault.
+Withdraw: When users withdraw tokens, they must burn an equivalent number of vault shares.
+
+*Market Contract*
+The Market contract manages the entire lending and borrowing process. It allows users to:
+
+Deposit collateral and borrow against it.
+Lend assets by depositing them into ERC-4626 vaults.
+Borrow tokens against their collateral and track their borrowing amounts.
+Additionally, the Market contract is responsible for managing the LTV ratios and ensuring users stay within their borrowing limits.
 
 <img width="641" alt="Isolated Lending Market Architecture" src="https://github.com/user-attachments/assets/60e0c870-a229-4a5c-82eb-0d8eabf34b9a" />
 
