@@ -47,8 +47,8 @@ contract Market {
 
     // Event for borrowed
     event Borrowed(
-        address indexed user,
-        address indexed collateralToken,
+        address indexed borrower,
+        address indexed borrowableToken,
         uint256 amount
     );
 
@@ -178,7 +178,7 @@ contract Market {
         // Transfer borrowable asset to user
         IERC20(borrowableToken).transfer(msg.sender, amount);
 
-        // Emit even
+        // Emit event for borrowed
         emit Borrowed(msg.sender, borrowableToken, amount);
     }
 
