@@ -27,9 +27,10 @@ It is designed to support permissionless interaction, where anyone can contribut
 
 # Core Contract Functions: 
 
-1. Deposit and Withdraw Tokens
-deposit(uint256 amount): Allows users to deposit collateral or loan tokens into a vault, increasing their balance and minting corresponding vault shares.
-withdraw(uint256 amount): Allows users to withdraw collateral or loan tokens from a vault, reducing their balance and burning corresponding vault shares.
+1. Deposit and Withdraw loan Tokens
+deposit(uint256 amount): Allows users to deposit loan tokens into a vault, increasing their balance and minting corresponding vault shares. 
+As well, you can deposit loan tokens to accrue yield. 
+withdraw(uint256 amount): Allows users to withdraw loan tokens from a vault, reducing their balance and burning corresponding vault shares.
 
 2. Borrowing
 borrow(address borrowableToken, uint256 amount): Allows users to borrow a specified amount of a borrowable token, provided they stay within their available borrowing power based on their collateral and LTV ratio.
@@ -51,8 +52,11 @@ getCollateralTokens(): Returns the list of collateral tokens supported by the ma
 The protocol is designed with modularity in mind, and future enhancements will include the separation of core functionality into distinct modules:
 
 *Oracle Module*: For providing dynamic price feeds of collateral and borrowed assets.
+
 *Interest Rate Module*: For calculating interest rates for borrowers.
+
 *Factory Module*: For enabling the deployment of new lending markets with customizable parameters.
+
 *Liquidation Module*: For handling the liquidation of collateral in cases of over-leveraging or default.
 
 # Smart Contract Architecture
