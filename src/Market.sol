@@ -2,22 +2,27 @@
 pragma solidity ^0.8.0;
 
 import "./Vault.sol";
+import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 
 contract Market {
-    // Mapping for collateral token vaults (ERC4626) for this market
-    mapping(address => address) public collateralVaults; // Collateral token -> Vault address
+    // Mapping to track user collateral balances for each collateral token
+    mapping(address => mapping(address => uint256))
+        public userCollateralBalances;
+
+    // Mapping to track the supported collateral types in the market
+    mapping(address => bool) public supportedCollateralTokens;
 
     // Mapping for borrowable token vaults (ERC4626) for this market
     mapping(address => address) public borrowableVaults; // Borrowable token -> Vault address
 
-    // Mapping for Loan-to-Value (LTV) ratios for borrowable tokens
-    mapping(address => uint256) public ltvRatios; // Token -> LTV ratio (percentage out of 100)
-
     // Mapping to track users' borrowed amounts for each borrowable token
     mapping(address => mapping(address => uint256)) public borrowedAmount; // User -> Token -> Amount
 
-    // Storage variable to track all collateral tokens
-    address[] public collaterals;
+    // Mapping for Loan-to-Value (LTV) ratios for borrowable tokens
+    mapping(address => uint256) public ltvRatios; // Token -> LTV ratio (percentage out of 100)
+
+    // Array to track all supported collateral tokens
+    address[] public collateralTokens;
 
     // Event for adding borrowable asset vault
     event BorrowableVaultAdded(
@@ -25,41 +30,20 @@ contract Market {
         address indexed vault
     );
 
-    // Event for adding a collateral vault
-    event CollateralVaultAdded(
-        address indexed collateralToken,
-        address indexed vault
-    );
+    event CollateralTokenAdded(address indexed collateralToken);
 
-    // Event for depositing collateral
     event CollateralDeposited(
         address indexed user,
         address indexed collateralToken,
         uint256 amount
     );
 
-    // Event for withdrawing collateral
     event CollateralWithdrawn(
         address indexed user,
         address indexed collateralToken,
         uint256 amount
     );
 
-    // Event for depositing collateral
-    event BorrowableDeposited(
-        address indexed user,
-        address indexed borrowableToken,
-        uint256 amount
-    );
-
-    // Event for withdrawing collateral
-    event BorrowableWithdrawn(
-        address indexed user,
-        address indexed borrowableToken,
-        uint256 amount
-    );
-
-    // Event for borrowed
     event Borrowed(
         address indexed borrower,
         address indexed borrowableToken,
@@ -86,10 +70,8 @@ contract Market {
             borrowableVaults[borrowableToken] == address(0),
             "Vault already exists for this borrowable asset"
         );
-        require(ltvRatio <= 100, "LTV ratio cannot exceed 100");
-        require(ltvRatio > 0, "LTV ratio must be greater than 0");
 
-        // Set the LTV ratio before adding the vault
+        // Set the LTV ratio inside the vault
         setLTVRatio(borrowableToken, ltvRatio);
 
         // Add the vault to the borrowableVaults mapping
@@ -97,44 +79,43 @@ contract Market {
 
         // Emit events for logging
         emit BorrowableVaultAdded(borrowableToken, vault);
-        emit LTVRatioSet(borrowableToken, ltvRatio);
     }
 
-    function addCollateralVault(
-        address collateralToken,
-        address vault
-    ) external {
-        require(collateralToken != address(0), "Invalid collateral token");
-        require(vault != address(0), "Invalid vault address");
+    // Function to add a collateral type to the market
+    function addCollateralToken(address collateralToken) external {
         require(
-            collateralVaults[collateralToken] == address(0),
-            "Vault already exists for this collateral"
+            collateralToken != address(0),
+            "Invalid collateral token address"
+        );
+        require(
+            !supportedCollateralTokens[collateralToken],
+            "Collateral token already added"
         );
 
-        // Add the vault to the collateralVaults mapping
-        collateralVaults[collateralToken] = vault;
+        // Mark the collateral token as supported
+        supportedCollateralTokens[collateralToken] = true;
 
-        // Track the collateral token
-        collaterals.push(collateralToken);
+        // Add collateral to array to track all supported collateral tokens
+        collateralTokens.push(collateralToken);
 
-        emit CollateralVaultAdded(collateralToken, vault);
+        emit CollateralTokenAdded(collateralToken);
     }
 
     function depositCollateral(
         address collateralToken,
         uint256 amount
-    ) external returns (uint256 shares) {
-        // Ensure the vault exists for this collateral token
+    ) external {
+        // Ensure the collateral token is supported
         require(
-            collateralVaults[collateralToken] != address(0),
-            "Vault not found for this collateral"
+            supportedCollateralTokens[collateralToken],
+            "Collateral token not supported"
         );
 
-        // Get the vault for the collateral token
-        Vault vault = Vault(collateralVaults[collateralToken]);
+        // Transfer the collateral token from the user to the market contract
+        IERC20(collateralToken).transferFrom(msg.sender, address(this), amount);
 
-        // Deposit the collateral into the vault and mint shares for the user
-        shares = vault.deposit(amount, msg.sender);
+        // Update the user's collateral balance for this token
+        userCollateralBalances[msg.sender][collateralToken] += amount;
 
         // Emit an event for logging
         emit CollateralDeposited(msg.sender, collateralToken, amount);
@@ -145,77 +126,30 @@ contract Market {
     function withdrawCollateral(
         address collateralToken,
         uint256 amount
-    ) external returns (uint256 shares) {
-        // Ensure the vault exists for this collateral token
+    ) external {
+        // Ensure the user has enough collateral to withdraw
         require(
-            collateralVaults[collateralToken] != address(0),
-            "Vault not found for this collateral"
+            userCollateralBalances[msg.sender][collateralToken] >= amount,
+            "Insufficient collateral balance"
         );
 
-        // Get the vault for the collateral token
-        Vault vault = Vault(collateralVaults[collateralToken]);
+        // Decrease the user's collateral balance
+        userCollateralBalances[msg.sender][collateralToken] -= amount;
 
-        // Withdraw the collateral from the vault and burn shares of the user
-        shares = vault.withdraw(amount, msg.sender, msg.sender);
+        // Transfer the collateral token from the market contract to the user
+        IERC20(collateralToken).transfer(msg.sender, amount);
 
         // Emit an event for logging
         emit CollateralWithdrawn(msg.sender, collateralToken, amount);
-
-        return shares;
     }
 
-    function depositBorrowable(
-        address borrowableToken,
-        uint256 amount
-    ) external returns (uint256 shares) {
-        // Ensure the vault exists for this borrowable token
-        require(
-            borrowableVaults[borrowableToken] != address(0),
-            "Vault not found for this borrowable"
-        );
-
-        // Get the vault for the borrowable token
-        Vault vault = Vault(borrowableVaults[borrowableToken]);
-
-        // Deposit the borrowable into the vault and mint shares for the user
-        shares = vault.deposit(amount, msg.sender);
-
-        // Emit an event for logging
-        emit BorrowableDeposited(msg.sender, borrowableToken, amount);
-
-        return shares;
-    }
-
-    function withdrawBorrowable(
-        address borrowableToken,
-        uint256 amount
-    ) external returns (uint256 shares) {
-        // Ensure the vault exists for this borrowable token
-        require(
-            borrowableVaults[borrowableToken] != address(0),
-            "Vault not found for this borrowable"
-        );
-
-        // Get the vault for the borrowable token
-        Vault vault = Vault(borrowableVaults[borrowableToken]);
-
-        // Withdraw the borrowable from the vault and burn shares of the user
-        shares = vault.withdraw(amount, msg.sender, msg.sender);
-
-        // Emit an event for logging
-        emit CollateralWithdrawn(msg.sender, borrowableToken, amount);
-
-        return shares;
-    }
-
-    function borrow(address borrowableToken, uint256 amount) external {
+    function borrow(address borrowableToken, uint256 amount) public {
         // Ensure borrowable token is supported
         require(
             borrowableVaults[borrowableToken] != address(0),
             "Borrowable asset not supported"
         );
 
-        // Get the borrowable token vault
         Vault vault = Vault(borrowableVaults[borrowableToken]);
 
         // Get the user's collateral value
@@ -230,23 +164,30 @@ contract Market {
         // Ensure the user is not borrowing more than allowed
         require(amount <= maxBorrow, "Borrow amount exceeds LTV limit");
 
-        // Update borrowed amount tracking
-        borrowedAmount[msg.sender][borrowableToken] += amount;
-
         // Ensure the vault has enough borrowable funds to lend
         uint256 availableFunds = vault.totalAssets(); // Check vault balance
         require(availableFunds >= amount, "Insufficient funds in vault");
 
-        // Directly transfer the borrowable token to the user without burning shares
-        vault.withdrawForBorrower(amount, msg.sender);
+        // Update borrowed amount tracking
+        borrowedAmount[msg.sender][borrowableToken] += amount;
+
+        // Withdraw from the Vault (this will handle internal accounting correctly)
+        vault.withdraw(amount, address(this), address(this));
+
+        // Transfer the borrowed amount to the borrower
+        IERC20(borrowableToken).transfer(msg.sender, amount);
 
         // Emit event for borrowed
         emit Borrowed(msg.sender, borrowableToken, amount);
     }
 
     // Function to set the LTV ratio for a borrowable token
-    // We will keep this simple for now as we are not using an oracle yet
+    // Change this for admin control
     function setLTVRatio(address borrowableToken, uint256 ratio) internal {
+        require(msg.sender == address(this), "Only Vault can set LTV"); // Change this for admin control
+        require(ratio <= 100, "LTV ratio cannot exceed 100");
+        require(ratio > 0, "LTV ratio must be greater than 0");
+
         ltvRatios[borrowableToken] = ratio;
 
         emit LTVRatioSet(borrowableToken, ratio);
@@ -263,14 +204,20 @@ contract Market {
     function getTotalCollateralValue(
         address user
     ) public view returns (uint256 totalValue) {
-        address[] memory collateralTokens = getCollateralTokens(); // Array of tokens in the market
+        totalValue = 0;
 
+        // Loop through the array of collateral tokens
         for (uint256 i = 0; i < collateralTokens.length; i++) {
-            Vault vault = Vault(collateralVaults[collateralTokens[i]]);
-            uint256 userShares = vault.balanceOf(user);
-            uint256 assetValue = vault.convertToAssets(userShares); // Convert shares to token amount
-            totalValue += assetValue;
+            address collateralToken = collateralTokens[i];
+            uint256 userCollateralAmount = userCollateralBalances[user][
+                collateralToken
+            ];
+
+            // Add price of the collateral token (from an oracle) later
+            totalValue += userCollateralAmount;
         }
+
+        return totalValue;
     }
 
     // Function that returns the list of collateral tokens
