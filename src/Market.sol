@@ -18,6 +18,10 @@ contract Market {
     // Mapping to track users' borrowed amounts for each borrowable token
     mapping(address => mapping(address => uint256)) public borrowedAmount; // User -> Token -> Amount
 
+    // Tracks the amount of each loan token lent by each user
+    mapping(address => mapping(address => uint256)) public lendAmount;
+    // User -> Loan Token -> Amount
+
     // Mapping for Loan-to-Value (LTV) ratios for borrowable tokens
     mapping(address => uint256) public ltvRatios; // Token -> LTV ratio (percentage out of 100)
 
@@ -41,6 +45,18 @@ contract Market {
     event CollateralWithdrawn(
         address indexed user,
         address indexed collateralToken,
+        uint256 amount
+    );
+
+    event LendTokenDeposited(
+        address indexed user,
+        address indexed borrowableToken,
+        uint256 amount
+    );
+
+    event LendTokenWithdrawn(
+        address indexed user,
+        address indexed borrowableToken,
         uint256 amount
     );
 
@@ -141,6 +157,63 @@ contract Market {
 
         // Emit an event for logging
         emit CollateralWithdrawn(msg.sender, collateralToken, amount);
+    }
+
+    // Function to deposit a loan token into the market contract
+    function depositLendToken(
+        address borrowableToken,
+        uint256 amount
+    ) external {
+        require(
+            borrowableVaults[borrowableToken] != address(0),
+            "Borrowable asset not supported"
+        );
+
+        // Ensure the user is allowed to deposit this asset
+        require(amount > 0, "Amount must be greater than zero");
+
+        // Get the vault associated with the borrowable token
+        Vault vault = Vault(borrowableVaults[borrowableToken]);
+
+        // User deposit the loan token on the vault and receives vault shares
+        vault.deposit(amount, msg.sender);
+
+        // Track lend token amount deposited by the user
+        lendAmount[msg.sender][borrowableToken] += amount;
+
+        // Emit event for logging
+        emit LendTokenDeposited(msg.sender, borrowableToken, amount);
+    }
+
+    // Function to withdraw a loan token from the market contract
+    function withdrawLendToken(
+        address borrowableToken,
+        uint256 amount
+    ) external {
+        require(
+            borrowableVaults[borrowableToken] != address(0),
+            "Borrowable asset not supported"
+        );
+
+        // Ensure the user has enough lend balance to withdraw
+        require(
+            lendAmount[msg.sender][borrowableToken] >= amount,
+            "Insufficient lend balance"
+        );
+
+        // Ensure the vault has enough assets available to withdraw
+        Vault vault = Vault(borrowableVaults[borrowableToken]);
+        uint256 availableFunds = vault.totalAssets();
+        require(availableFunds >= amount, "Insufficient funds in vault");
+
+        // Withdraw from the vault
+        vault.withdraw(amount, msg.sender, msg.sender);
+
+        // Update lend amount
+        lendAmount[msg.sender][borrowableToken] -= amount;
+
+        // Emit event for logging
+        emit LendTokenWithdrawn(msg.sender, borrowableToken, amount);
     }
 
     function borrow(address borrowableToken, uint256 amount) public {
