@@ -16,6 +16,9 @@ contract Market {
     // Mapping to track users' borrowed amounts for each borrowable token
     mapping(address => mapping(address => uint256)) public borrowedAmount; // User -> Token -> Amount
 
+    // Storage variable to track all collateral tokens
+    address[] public collateralTokens;
+
     // Event for adding borrowable asset vault
     event BorrowableVaultAdded(
         address indexed borrowableToken,
@@ -40,6 +43,13 @@ contract Market {
     event CollateralVaultAdded(
         address indexed collateralToken,
         address indexed vault
+    );
+
+    // Event for borrowed
+    event Borrowed(
+        address indexed user,
+        address indexed collateralToken,
+        uint256 amount
     );
 
     // Event for setting LTV ratio for a borrowable token
@@ -87,7 +97,11 @@ contract Market {
             "Vault already exists for this collateral"
         );
 
+        // Add the vault to the collateralVaults mapping
         collateralVaults[collateralToken] = vault;
+
+        // Track the collateral token
+        collateralTokens.push(collateralToken);
 
         emit CollateralVaultAdded(collateralToken, vault);
     }
@@ -136,6 +150,38 @@ contract Market {
         return shares;
     }
 
+    function borrow(address borrowableToken, uint256 amount) external {
+        // Ensure borrowable token is supported
+        require(
+            borrowableVaults[borrwableToken] != address(0),
+            "Borrowable asset not supported"
+        );
+
+        // Get the borrowable token vault
+        Vault vault = Vault(borrowableVaults[borrowableToken]);
+
+        // Get the user's collateral value
+        uint256 userCollateralValue = getTotalCollateralValue(msg.sender);
+
+        // Get the LTV ratio for this borrowable token
+        uint256 ltvRatio = getLTVRatio(borrowableToken);
+
+        // Calculate the max borrowable amount
+        uint256 maxBorrow = (userCollateralValue * ltvRatio) / 100;
+
+        // Ensure the user is not borrowing more than allowed
+        require(amount <= maxBorrow, "Borrow amount exceeds LTV limit");
+
+        // Update borrowed amount tracking
+        borrowedAmoun[msg.sender][borrowableToken] += amount;
+
+        // Transfer borrowable asset to user
+        IERC20(borrowableToken).transfer(msg.sender, amount);
+
+        // Emit even
+        emit Borrowed(msg.sender, borrowableToken, amount);
+    }
+
     // Function to set the LTV ratio for a borrowable token
     // We will keep this simple for now as we are not using an oracle yet
     function setLTVRatio(address borrowableToken, uint256 ratio) external {
@@ -149,5 +195,24 @@ contract Market {
         address borrowableToken
     ) external view returns (uint256) {
         return ltvRatios[borrowableToken];
+    }
+
+    // Supporting function to check user/s total collateral
+    function getTotalCollateralValue(
+        address user
+    ) public view returns (uint256 totalValue) {
+        address[] memory collateralTokens = getCollateralTokens(); // Array of tokens in the market
+
+        for (uint256 i = 0; i < collateralTokens.length; i++) {
+            Vault vault = Vault(collateralVaults[collateralTokens[i]]);
+            uint256 userShares = vault.balanceOf(user);
+            uint256 assetValue = vault.convertToAssets(userShares); // Convert shares to token amount
+            totalValue += assetValue;
+        }
+    }
+
+    // Function that returns the list of collateral tokens
+    function getCollateralTokens() external view returns (address[] memory) {
+        return collateralTokens;
     }
 }
