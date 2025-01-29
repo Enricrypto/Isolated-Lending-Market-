@@ -69,9 +69,10 @@ contract MarketTest is Test {
     function testAddBorrowableVault() public {
         address borrowableToken = address(0x1234); // Example token address
         address vault = address(0x5678); // Example vault address
+        uint256 ltvRatio = 70;
 
         // Add the borrowable vault to the market
-        market.addBorrowableVault(borrowableToken, vault);
+        market.addBorrowableVault(borrowableToken, vault, ltvRatio);
 
         // Assert that the borrowableVaults mapping is updated correctly
         assertEq(market.borrowableVaults(borrowableToken), vault);

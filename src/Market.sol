@@ -17,7 +17,7 @@ contract Market {
     mapping(address => mapping(address => uint256)) public borrowedAmount; // User -> Token -> Amount
 
     // Storage variable to track all collateral tokens
-    address[] public collateralTokens;
+    address[] public collaterals;
 
     // Event for adding borrowable asset vault
     event BorrowableVaultAdded(
@@ -101,7 +101,7 @@ contract Market {
         collateralVaults[collateralToken] = vault;
 
         // Track the collateral token
-        collateralTokens.push(collateralToken);
+        collaterals.push(collateralToken);
 
         emit CollateralVaultAdded(collateralToken, vault);
     }
@@ -153,7 +153,7 @@ contract Market {
     function borrow(address borrowableToken, uint256 amount) external {
         // Ensure borrowable token is supported
         require(
-            borrowableVaults[borrwableToken] != address(0),
+            borrowableVaults[borrowableToken] != address(0),
             "Borrowable asset not supported"
         );
 
@@ -173,7 +173,7 @@ contract Market {
         require(amount <= maxBorrow, "Borrow amount exceeds LTV limit");
 
         // Update borrowed amount tracking
-        borrowedAmoun[msg.sender][borrowableToken] += amount;
+        borrowedAmount[msg.sender][borrowableToken] += amount;
 
         // Transfer borrowable asset to user
         IERC20(borrowableToken).transfer(msg.sender, amount);
@@ -184,7 +184,7 @@ contract Market {
 
     // Function to set the LTV ratio for a borrowable token
     // We will keep this simple for now as we are not using an oracle yet
-    function setLTVRatio(address borrowableToken, uint256 ratio) external {
+    function setLTVRatio(address borrowableToken, uint256 ratio) internal {
         ltvRatios[borrowableToken] = ratio;
 
         emit LTVRatioSet(borrowableToken, ratio);
@@ -193,7 +193,7 @@ contract Market {
     // Function to get the LTV ratio for a borrowable token
     function getLTVRatio(
         address borrowableToken
-    ) external view returns (uint256) {
+    ) public view returns (uint256) {
         return ltvRatios[borrowableToken];
     }
 
@@ -212,7 +212,7 @@ contract Market {
     }
 
     // Function that returns the list of collateral tokens
-    function getCollateralTokens() external view returns (address[] memory) {
-        return collateralTokens;
+    function getCollateralTokens() public view returns (address[] memory) {
+        return collaterals;
     }
 }
