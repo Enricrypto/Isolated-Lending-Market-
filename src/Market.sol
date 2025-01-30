@@ -74,8 +74,7 @@ contract Market {
     // Function to add a borrowable vault to the market
     function addBorrowableVault(
         address borrowableToken,
-        address vault,
-        uint256 ltvRatio
+        address vault
     ) external {
         require(
             borrowableToken != address(0),
@@ -87,9 +86,6 @@ contract Market {
             "Vault already exists for this borrowable asset"
         );
 
-        // Set the LTV ratio inside the vault
-        setLTVRatio(borrowableToken, ltvRatio);
-
         // Add the vault to the borrowableVaults mapping
         borrowableVaults[borrowableToken] = vault;
 
@@ -98,7 +94,10 @@ contract Market {
     }
 
     // Function to add a collateral type to the market
-    function addCollateralToken(address collateralToken) external {
+    function addCollateralToken(
+        address collateralToken,
+        uint256 ltvRatio
+    ) external {
         require(
             collateralToken != address(0),
             "Invalid collateral token address"
@@ -110,6 +109,9 @@ contract Market {
 
         // Mark the collateral token as supported
         supportedCollateralTokens[collateralToken] = true;
+
+        // Set the LTV ratio for that specific collateral token
+        setLTVRatio(collateralToken, ltvRatio);
 
         // Add collateral to array to track all supported collateral tokens
         collateralTokens.push(collateralToken);
@@ -228,11 +230,8 @@ contract Market {
         // Get the user's collateral value
         uint256 userCollateralValue = getTotalCollateralValue(msg.sender);
 
-        // Get the LTV ratio for this borrowable token
-        uint256 ltvRatio = getLTVRatio(borrowableToken);
-
         // Calculate the max borrowable amount
-        uint256 maxBorrow = (userCollateralValue * ltvRatio) / 100;
+        uint256 maxBorrow = userCollateralValue; // This is the borrowing power
 
         // Ensure the user is not borrowing more than allowed
         require(amount <= maxBorrow, "Borrow amount exceeds LTV limit");
@@ -254,30 +253,30 @@ contract Market {
         emit Borrowed(msg.sender, borrowableToken, amount);
     }
 
-    // Function to set the LTV ratio for a borrowable token
+    // Function to set the LTV ratio for a collateral token
     // Change this for admin control
-    function setLTVRatio(address borrowableToken, uint256 ratio) internal {
+    function setLTVRatio(address collateralToken, uint256 ratio) internal {
         require(msg.sender == address(this), "Only Vault can set LTV"); // Change this for admin control
         require(ratio <= 100, "LTV ratio cannot exceed 100");
         require(ratio > 0, "LTV ratio must be greater than 0");
 
-        ltvRatios[borrowableToken] = ratio;
+        ltvRatios[collateralToken] = ratio;
 
-        emit LTVRatioSet(borrowableToken, ratio);
+        emit LTVRatioSet(collateralToken, ratio);
     }
 
-    // Function to get the LTV ratio for a borrowable token
+    // Function to get the LTV ratio for a collateral token
     function getLTVRatio(
-        address borrowableToken
+        address collateralToken
     ) public view returns (uint256) {
-        return ltvRatios[borrowableToken];
+        return ltvRatios[collateralToken];
     }
 
     // Supporting function to check user/s total collateral
     function getTotalCollateralValue(
         address user
-    ) public view returns (uint256 totalValue) {
-        totalValue = 0;
+    ) public view returns (uint256 totalBorrowingPower) {
+        totalBorrowingPower = 0;
 
         // Loop through the array of collateral tokens
         for (uint256 i = 0; i < collateralTokens.length; i++) {
@@ -285,12 +284,13 @@ contract Market {
             uint256 userCollateralAmount = userCollateralBalances[user][
                 collateralToken
             ];
-
-            // Add price of the collateral token (from an oracle) later
-            totalValue += userCollateralAmount;
+            if (userCollateralAmount > 0) {
+                uint256 ltvRatio = getLTVRatio(collateralToken); // LTV per collateral token
+                uint256 collateralValue = userCollateralAmount; // Add oracle price fetch LATER
+                totalBorrowingPower += (collateralValue * ltvRatio) / 100;
+            }
         }
-
-        return totalValue;
+        return totalBorrowingPower;
     }
 
     // Function that returns the list of collateral tokens
