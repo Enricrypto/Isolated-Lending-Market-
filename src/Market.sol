@@ -137,8 +137,6 @@ contract Market {
 
         // Emit an event for logging
         emit CollateralDeposited(msg.sender, collateralToken, amount);
-
-        return shares;
     }
 
     function withdrawCollateral(
@@ -295,6 +293,6 @@ contract Market {
 
     // Function that returns the list of collateral tokens
     function getCollateralTokens() public view returns (address[] memory) {
-        return collaterals;
+        return collateralTokens;
     }
 }
