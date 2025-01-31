@@ -86,6 +86,12 @@ contract Market {
             "Vault already exists for this borrowable asset"
         );
 
+        // Verify that the vault is an actual ERC4626 contract for the given token
+        require(
+            Vault(vault).asset() == borrowableToken,
+            "Vault does not match borrowable token"
+        );
+
         // Add the vault to the borrowableVaults mapping
         borrowableVaults[borrowableToken] = vault;
 
