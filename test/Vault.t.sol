@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
-import "forge-std/console.sol";
+import "lib/forge-std/src/Test.sol";
+import "lib/forge-std/src/console.sol";
 import "../src/Vault.sol";
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 
@@ -14,18 +14,18 @@ contract VaultTest is Test {
 
     address daiAddress = 0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1; // DAI address on Arbitrum
 
-    uint256 public initialDeposit = 15000 * 1e18; // 15000 tokens
+    uint256 public initialDeposit = 5000 * 1e18; // 5000 tokens
     uint256 public initialUserBalance = 10000 * 1e18; // 2000 DAI for user
 
     function setUp() public {
         // Fork the Arbitrum mainnet at the latest block
         vm.createSelectFork(
             "https://arb-mainnet.g.alchemy.com/v2/ADLPIIv6SUjhmaoJYxWLHKDUDaw8RnRj",
-            300109385
+            301134183
         );
 
         // Deploy Vault contract
-        vault = new Vault(daiAddress, "VaultShare", "VS");
+        vault = new Vault(daiAddress, "Vault Dai", "VDAI");
 
         // Initialize the DAI instance
         dai = IERC20(daiAddress);

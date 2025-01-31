@@ -110,7 +110,7 @@ contract Market {
         // Mark the collateral token as supported
         supportedCollateralTokens[collateralToken] = true;
 
-        // Set the LTV ratio for that specific collateral token
+        // Set the LTV ratio for that specific collateral token (users can define their own LTV for now)
         setLTVRatio(collateralToken, ltvRatio);
 
         // Add collateral to array to track all supported collateral tokens
@@ -254,7 +254,6 @@ contract Market {
     // Function to set the LTV ratio for a collateral token
     // Change this for admin control
     function setLTVRatio(address collateralToken, uint256 ratio) internal {
-        require(msg.sender == address(this), "Only Vault can set LTV"); // Change this for admin control
         require(ratio <= 100, "LTV ratio cannot exceed 100");
         require(ratio > 0, "LTV ratio must be greater than 0");
 
