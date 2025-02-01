@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
-import "forge-std/console.sol";
+import "lib/forge-std/src/Test.sol";
+import "lib/forge-std/src/console.sol";
 import "../src/Vault.sol";
 import "../src/Market.sol";
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
@@ -10,7 +10,6 @@ import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 contract MarketTest is Test {
     Market public market;
     Vault public daiVault;
-    Vault public usdtVault;
     IERC20 public dai;
     IERC20 public usdt;
 
@@ -27,19 +26,13 @@ contract MarketTest is Test {
 
         // Deploy the market contract
         market = new Market();
+
+        // DAI and USDT addresses
         dai = IERC20(0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1); // DAI token address
         usdt = IERC20(0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9); // USDT token address
 
-        // Deploy Vault contracts for DAI and USDT
-        daiVault = new Vault(address(dai), "DAI Vault", "dDAI");
-        usdtVault = new Vault(address(usdt), "USDT Vault", "dUSDT");
-
-        // Add Collateral Vaults for testing
-        // market.addCollateralVault(address(dai), address(daiVault));
-
-        // Initialize DAI and USDT tokens
-        dai = IERC20(dai);
-        usdt = IERC20(usdt);
+        // Deploy the Vault contract for a specific token
+        daiVault = new Vault(address(dai), "vDai", "vDAI");
 
         // Set up a user address
         user = address(0x123);
@@ -56,81 +49,170 @@ contract MarketTest is Test {
         // Impersonate a USDT whale to send USDT tokens to the user
         address usdtWhale = 0xF977814e90dA44bFA03b6295A0616a897441aceC;
         vm.startPrank(usdtWhale);
-        usdt.transfer(user, 5000 * 1e6); // Transfer 5000 USDT to user
+        usdt.transfer(user, 10000 * 1e6); // Transfer 5000 USDT to user
         vm.stopPrank();
 
         // Approve the market contract for both DAI and USDT
         vm.startPrank(user);
         dai.approve(address(market), type(uint256).max);
+        dai.approve(address(daiVault), type(uint256).max);
         usdt.approve(address(market), type(uint256).max);
         vm.stopPrank();
     }
 
-    // function testAddBorrowableVault() public {
-    //     address borrowableToken = address(0x1234); // Example token address
-    //     address vault = address(0x5678); // Example vault address
-    //     uint256 ltvRatio = 70;
+    function testAddBorrowableVault() public {
+        address borrowableToken = address(0x1234); // Example token address
+        address vault = address(0x5678); // Example vault address
 
-    //     // Add the borrowable vault to the market
-    //     market.addBorrowableVault(borrowableToken, vault, ltvRatio);
+        // Add the borrowable vault to the market
+        market.addBorrowableVault(borrowableToken, vault);
 
-    //     // Assert that the borrowableVaults mapping is updated correctly
-    //     assertEq(market.borrowableVaults(borrowableToken), vault);
-    // }
+        // Assert that the borrowableVaults mapping is updated correctly
+        assertEq(
+            market.borrowableVaults(borrowableToken),
+            vault,
+            "Borrowable vault is updated correctly"
+        );
+    }
 
-    // // Test to check if the DAI token is correctly mapped to the vault address
-    // function testCollateralVaultRegistration() public view {
-    //     // Retrieve the vault address for the DAI token from the market contract
-    //     address registeredVault = market.collateralVaults(address(dai));
+    // Test Add Collateral Token to market
+    function testAddCollateralToken() public {
+        address collateralToken = address(usdt); // Example token address
+        uint256 ltvRatio = 75; // 75% LTV Ratio
 
-    //     // Assert that the registered vault matches the deployed vault address
-    //     assertEq(
-    //         registeredVault,
-    //         address(daiVault),
-    //         "Vault address not correctly mapped for DAI."
-    //     );
-    // }
+        vm.startPrank(user); // Any user can now add collateral and set LTV
+        market.addCollateralToken(collateralToken, ltvRatio);
+        vm.stopPrank();
 
-    // // Test depositCollateral for DAI
-    // function testDepositCollateralDAI() public {
-    //     uint256 initialDeposit = 5000 * 1e18;
+        // Assert that the supportedCollateral mapping is now supported
+        assertEq(
+            market.supportedCollateralTokens(collateralToken),
+            true,
+            "Collateral supported by market"
+        );
 
-    //     uint256 initialUserDaiBalance = dai.balanceOf(user);
-    //     console.log("Initial DAI Balance:", initialUserDaiBalance);
-    //     uint256 initialVaultDaiBalance = daiVault.balanceOf(user);
-    //     console.log("Initial Vault DAI Shares:", initialVaultDaiBalance);
+        assertEq(
+            market.getLTVRatio(collateralToken),
+            ltvRatio,
+            "LTV Ratio has been set correctly"
+        );
+    }
 
-    //     // User deposits collateral (DAI)
-    //     vm.startPrank(user);
-    //     market.depositCollateral(address(dai), initialDeposit);
-    //     vm.stopPrank();
+    // Test depositCollateral for DAI
+    function testDepositCollateral() public {
+        address collateralToken = address(usdt); // USDT as collateral
+        uint256 deposit = 5000 * 1e6; // 1000 USDT
 
-    //     // Check if the user’s DAI balance decreased
-    //     uint256 userDaiBalanceAfterDeposit = dai.balanceOf(user);
-    //     uint256 vaultDaiBalanceAfterDeposit = daiVault.balanceOf(user);
+        // First, we add USDT as a collateral token
+        vm.startPrank(user);
+        market.addCollateralToken(collateralToken, 75); // 75% LTV
+        vm.stopPrank();
 
-    //     console.log(
-    //         "User DAI Balance After Deposit:",
-    //         userDaiBalanceAfterDeposit
-    //     );
+        // Ensure the user has USDT before depositing
+        assertGe(usdt.balanceOf(user), deposit, "User should have enough USDT");
 
-    //     console.log(
-    //         "Vault DAI Shares After Deposit:",
-    //         vaultDaiBalanceAfterDeposit
-    //     );
+        // Deposit collateral into the market
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, deposit);
+        vm.stopPrank();
 
-    //     // Verify that DAI balance has decreased by the deposit amount
-    //     assertEq(
-    //         initialUserDaiBalance - userDaiBalanceAfterDeposit,
-    //         depositAmount,
-    //         "User DAI balance should decrease by the deposit amount"
-    //     );
+        // Ensure the contract received the USDT
+        assertEq(
+            usdt.balanceOf(address(market)),
+            deposit,
+            "Market should receive deposited collateral"
+        );
 
-    //     // Verify that vault shares have increased by the corresponding amount
-    //     assertEq(
-    //         vaultDaiBalanceAfterDeposit - initialVaultDaiBalance,
-    //         depositAmount,
-    //         "Vault shares should increase by the deposit amount"
-    //     );
-    // }
+        // Ensure the user's collateral balance updated correctly
+        assertEq(
+            market.userCollateralBalances(user, collateralToken),
+            deposit,
+            "User's collateral balance should be updated"
+        );
+    }
+
+    // Test for withdraw Collateral
+    function testWithdrawCollateral() public {
+        address collateralToken = address(usdt);
+        uint256 depositValue = 1000 * 1e6; // 1000 USDT
+        uint256 withdrawValue = 500 * 1e6; // Withdraw 500 USDT
+
+        // First, we add USDT as a collateral token
+        vm.startPrank(user);
+        market.addCollateralToken(collateralToken, 75); // 75% LTV
+        vm.stopPrank();
+
+        // Ensure the user has USDT before depositing
+        uint256 initialbalance = usdt.balanceOf(user);
+        assertGe(initialbalance, depositValue, "User should have enough USDT");
+
+        // Deposit collateral into the market
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, depositValue);
+        vm.stopPrank();
+
+        // User's collateral balance should be updated
+        uint256 balanceAfterDeposit = usdt.balanceOf(user);
+        assertEq(
+            market.userCollateralBalances(user, collateralToken),
+            depositValue,
+            "User should have deposited collateral"
+        );
+
+        // Withdraw collateral
+        vm.startPrank(user);
+        market.withdrawCollateral(collateralToken, withdrawValue);
+        vm.stopPrank();
+
+        // Ensure the contract sent the USDT back to the user
+        assertEq(
+            usdt.balanceOf(user),
+            balanceAfterDeposit + withdrawValue,
+            "User should receive withdrawn USDT"
+        );
+
+        // Ensure the user's collateral balance updated correctly
+        assertEq(
+            market.userCollateralBalances(user, collateralToken),
+            depositValue - withdrawValue,
+            "User's collateral balance should decrease"
+        );
+    }
+
+    // Test Deposit Lend Token
+    function testDepositLendToken() public {
+        uint256 deposit = 1000 * 1e18; // 1000 tokens
+        // Add the borrowable vault to the market
+        vm.startPrank(user);
+        market.addBorrowableVault(address(dai), address(daiVault));
+        vm.stopPrank();
+
+        // Assert that the borrowableVaults mapping is updated correctly
+        assertEq(
+            market.borrowableVaults(address(dai)),
+            address(daiVault),
+            "Borrowable vault is updated correctly"
+        );
+
+        // User starts with 0 balance
+        uint256 initialVaultBalance = daiVault.balanceOf(user);
+        uint256 initialDaiBalance = dai.balanceOf(user);
+        console.log("Initial Balance:", initialVaultBalance);
+        console.log("Initial DAI balance:", initialDaiBalance);
+
+        assertEq(dai.allowance(user, address(market)), type(uint256).max);
+
+        // Call the deposit function
+        vm.startPrank(user);
+        market.depositLendToken(address(dai), deposit); // deposit 1000 tokens
+        vm.stopPrank();
+
+        // Verify the vault has received the deposit amount
+        uint256 finalBalance = daiVault.balanceOf(user);
+        assertEq(
+            finalBalance,
+            initialDaiBalance + deposit,
+            "Balance after deposit mismatch"
+        );
+    }
 }
