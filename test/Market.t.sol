@@ -47,9 +47,9 @@ contract MarketTest is Test {
         market.addBorrowableVault(address(dai), address(daiVault));
         vm.stopPrank();
 
-        // User approves the Vault contract to spend their DAI
+        // User approves the Market contract to spend their DAI
         vm.startPrank(user);
-        dai.approve(address(daiVault), type(uint256).max);
+        dai.approve(address(market), type(uint256).max);
         vm.stopPrank();
 
         // Verify vault registration
@@ -188,31 +188,36 @@ contract MarketTest is Test {
     }
 
     // Test User deposits DAI into Vault & registers lending deposit
-    function testDepositAndRegisterLend() public {
+    function testDepositLendToken() public {
         uint256 depositAmount = 1000 * 1e18; // 1000 DAI
 
-        // Step 1: User deposits DAI into the Vault
+        // Step 1: User registers the deposit in the Market
         vm.startPrank(user);
-        uint256 sharesReceived = daiVault.deposit(depositAmount, user);
+        market.depositLendToken(address(dai), depositAmount);
         vm.stopPrank();
 
-        console.log("Shares received:", sharesReceived);
-
-        // Step 2: User registers the deposit in the Market
-        vm.startPrank(user);
-        market.registerLendDeposit(address(dai));
-        vm.stopPrank();
-
-        // Step 3: Verify the stored share balance in Market contract
-        uint256 registeredShares = market.lendAmount(user, address(dai));
-
+        // Step 2: Verify the stored share balance in Market contract
+        uint256 registeredShares = market.lendShares(user, address(dai));
         console.log("Registered Shares in Market:", registeredShares);
 
+        // Step 3: Verify the stored tokens balance in Market contract
+        uint256 registeredTokens = market.lendTokens(user, address(dai));
+        console.log("Registered Tokens in Market:", registeredTokens);
+
         // Assert that the Market correctly tracks the user's vault shares
+        uint256 sharesReceived = daiVault.convertToShares(depositAmount); // Equivalent shares received
         assertEq(
             registeredShares,
             sharesReceived,
             "Market should track vault shares correctly"
+        );
+
+        // Assert that the registered token balance matches the amount deposited
+        uint256 tokensRegistered = daiVault.convertToAssets(sharesReceived);
+        assertEq(
+            registeredTokens,
+            tokensRegistered,
+            "Market should track tokens correctly based on shares"
         );
     }
 }

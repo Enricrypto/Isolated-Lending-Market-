@@ -18,9 +18,12 @@ contract Market {
     // Mapping to track users' borrowed amounts for each borrowable token
     mapping(address => mapping(address => uint256)) public borrowedAmount; // User -> Token -> Amount
 
-    // Tracks the amount of each loan token lent by each user
-    mapping(address => mapping(address => uint256)) public lendAmount;
-    // User -> Loan Token -> Amount
+    // Tracks the amount of each loan share lent by each user
+    mapping(address => mapping(address => uint256)) public lendShares;
+    // User -> Loan Share -> Amount
+
+    // Tracks token equivalent of shares
+    mapping(address => mapping(address => uint256)) public lendTokens; // User -> Loan Token -> Amount
 
     // Mapping for Loan-to-Value (LTV) ratios for borrowable tokens
     mapping(address => uint256) public ltvRatios; // Token -> LTV ratio (percentage out of 100)
@@ -51,13 +54,14 @@ contract Market {
     event LendTokenRegistered(
         address indexed user,
         address indexed borrowableToken,
-        uint256 shares
+        uint256 sharesReceived
     );
 
     event LendTokenWithdrawn(
         address indexed user,
         address indexed borrowableToken,
-        uint256 amount
+        uint256 sharesWithdrawn,
+        uint256 tokensReceived
     );
 
     event Borrowed(
@@ -165,8 +169,11 @@ contract Market {
         emit CollateralWithdrawn(msg.sender, collateralToken, amount);
     }
 
-    // Users must deposit in the vault first, then call this function
-    function registerLendDeposit(address borrowableToken) external {
+    // Deposit Lend Tokens into the vault via the market contract
+    function depositLendToken(
+        address borrowableToken,
+        uint256 amount
+    ) external {
         require(
             borrowableVaults[borrowableToken] != address(0),
             "Vault not found"
@@ -175,14 +182,20 @@ contract Market {
         // Get the vault associated with the borrowable token
         Vault vault = Vault(borrowableVaults[borrowableToken]);
 
-        // Get the user's shares in the vault
-        uint256 userShares = vault.balanceOf(msg.sender);
-        require(userShares > 0, "No shares found");
+        // Transfer tokens from the user to the Market contract
+        IERC20(borrowableToken).transferFrom(msg.sender, address(this), amount);
 
-        // Track the user's shares instead of raw tokens
-        lendAmount[msg.sender][borrowableToken] = userShares;
+        // Approve the Vault to spend Market's tokens
+        IERC20(borrowableToken).approve(address(vault), amount);
 
-        emit LendTokenRegistered(msg.sender, borrowableToken, userShares);
+        // Deposit tokens into Vault on behalf of the user
+        uint256 sharesReceived = vault.deposit(amount, msg.sender);
+
+        // Track the user's shares in the Market contract
+        lendShares[msg.sender][borrowableToken] += sharesReceived;
+        lendTokens[msg.sender][borrowableToken] += amount;
+
+        emit LendTokenRegistered(msg.sender, borrowableToken, sharesReceived);
     }
 
     // Function to withdraw a loan token from the market contract
@@ -192,28 +205,37 @@ contract Market {
     ) external {
         require(
             borrowableVaults[borrowableToken] != address(0),
-            "Borrowable asset not supported"
+            "Vault not found"
         );
 
-        // Ensure the user has enough lend balance to withdraw
+        // Get the vault associated with the borrowable token
+        Vault vault = Vault(borrowableVaults[borrowableToken]);
+
+        // Ensure the user has enough lend tokens to withdraw
+        lendTokens[msg.sender][borrowableToken];
         require(
-            lendAmount[msg.sender][borrowableToken] >= amount,
+            lendTokens[msg.sender][borrowableToken] >= amount,
             "Insufficient lend balance"
         );
 
-        // Ensure the vault has enough assets available to withdraw
-        Vault vault = Vault(borrowableVaults[borrowableToken]);
-        uint256 availableFunds = vault.totalAssets();
-        require(availableFunds >= amount, "Insufficient funds in vault");
+        // Convert token amount to equivalent shares
+        uint256 sharesToWithdraw = vault.convertToShares(amount);
+        require(sharesToWithdraw > 0, "Invalid share amount");
 
-        // Withdraw from the vault
-        vault.withdraw(amount, msg.sender, msg.sender);
+        // Wikthdraw tokens from vault (burn shares, get tokens back)
+        uint256 tokensReceived = vault.withdraw(amount, msg.sender, msg.sender);
 
-        // Update lend amount
-        lendAmount[msg.sender][borrowableToken] -= amount;
+        // Update user's share & token balance in Market contract
+        lendShares[msg.sender][borrowableToken] -= sharesToWithdraw;
+        lendTokens[msg.sender][borrowableToken] -= tokensReceived;
 
         // Emit event for logging
-        emit LendTokenWithdrawn(msg.sender, borrowableToken, amount);
+        emit LendTokenWithdrawn(
+            msg.sender,
+            borrowableToken,
+            sharesToWithdraw,
+            tokensReceived
+        );
     }
 
     function borrow(address borrowableToken, uint256 amount) public {
