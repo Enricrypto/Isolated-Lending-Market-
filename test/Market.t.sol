@@ -77,6 +77,11 @@ contract MarketTest is Test {
         dai.approve(address(market), type(uint256).max);
         usdt.approve(address(market), type(uint256).max);
         vm.stopPrank();
+
+        // Whale approves the Market contract to spend their DAI
+        vm.startPrank(daiWhale);
+        dai.approve(address(market), type(uint256).max);
+        vm.stopPrank();
     }
 
     // Test Add Collateral Token to market
@@ -218,6 +223,135 @@ contract MarketTest is Test {
             registeredTokens,
             tokensRegistered,
             "Market should track tokens correctly based on shares"
+        );
+    }
+
+    function testWithdrawLendToken() public {
+        uint256 depositAmount = 1000 * 1e18; // 1000 DAI
+        uint256 withdrawAmount = 500 * 1e18; // Withdraw 500 DAI
+
+        // Step 1: User deposits DAI into the Market (which deposits into the Vault)
+        vm.startPrank(user);
+        market.depositLendToken(address(dai), depositAmount);
+        vm.stopPrank();
+
+        // Verify the balances after deposit
+        uint256 registeredShares = market.lendShares(user, address(dai));
+        uint256 registeredTokens = market.lendTokens(user, address(dai));
+
+        uint256 daiBalanceAfterDeposit = dai.balanceOf(user);
+        console.log("User DaiBalance after deposit:", daiBalanceAfterDeposit);
+
+        console.log("Registered Shares in Market:", registeredShares);
+        console.log("Registered Tokens in Market:", registeredTokens);
+
+        assertEq(
+            registeredTokens,
+            depositAmount,
+            "Market should track deposited tokens correctly"
+        );
+
+        // User approves the market contract to withdraw from the DAI Vault
+        vm.startPrank(user);
+        daiVault.approve(address(market), type(uint256).max);
+        vm.stopPrank();
+
+        console.log(
+            "Allowance of Market for Vault:",
+            IERC20(address(dai)).allowance(address(market), address(daiVault))
+        );
+
+        // Step 2: User withdraws from the Vault via the Market
+        vm.startPrank(user);
+        market.withdrawLendToken(address(dai), withdrawAmount);
+        vm.stopPrank();
+
+        // Verify the balances after withdrawal
+        uint256 remainingShares = market.lendShares(user, address(dai));
+        uint256 remainingTokens = market.lendTokens(user, address(dai));
+
+        console.log("Remaining Shares in Market:", remainingShares);
+        console.log("Remaining Tokens in Market:", remainingTokens);
+
+        assertEq(
+            remainingTokens,
+            depositAmount - withdrawAmount,
+            "Market should track withdrawn tokens correctly"
+        );
+
+        // Ensure the user's actual DAI balance increased after withdrawal
+        uint256 userDAIBalance = dai.balanceOf(user);
+        console.log("User's DAI Balance After Withdrawal:", userDAIBalance);
+        assertEq(
+            userDAIBalance,
+            daiBalanceAfterDeposit + withdrawAmount,
+            "User should receive the correct amount of DAI"
+        );
+    }
+
+    function testBorrow() public {
+        uint256 collateralAmount = 1000 * 1e6; // 1000 USDT
+        uint256 borrowAmount = 500 * 1e18; // 100 DAI
+        uint256 depositVault = 2000 * 1e18; // 2000 DAI
+        address daiWhale = 0xd85E038593d7A098614721EaE955EC2022B9B91B;
+        uint256 ltvRatio = 75;
+
+        // First, we add USDT as a collateral token
+        vm.startPrank(user);
+        market.addCollateralToken(address(usdt), ltvRatio); // 75% LTV
+        vm.stopPrank();
+
+        console.log("LTV for token:", address(usdt), "is", ltvRatio);
+
+        // Check the balance of the user for the borriwing token
+        uint256 initialDaiBalance = dai.balanceOf(user);
+        console.log("Initial DAI balance:", initialDaiBalance);
+
+        // Ensure the user has USDT before depositing
+        uint256 initialUsdtBalance = usdt.balanceOf(user);
+        assertGe(
+            initialUsdtBalance,
+            collateralAmount,
+            "User should have enough USDT"
+        );
+
+        // Deposit collateral into the market
+        vm.startPrank(user);
+        market.depositCollateral(address(usdt), collateralAmount);
+        vm.stopPrank();
+
+        // User's collateral balance should be updated
+        uint256 balanceAfterDeposit = usdt.balanceOf(user);
+        assertEq(
+            market.userCollateralBalances(user, address(usdt)),
+            collateralAmount,
+            "User should have deposited collateral"
+        );
+
+        // Get user's total collateral value
+        vm.startPrank(user);
+        uint256 totalCollateral = market.getTotalCollateralValue(user);
+        vm.stopPrank();
+        console.log("User's total collateral value:", totalCollateral);
+
+        vm.startPrank(daiWhale);
+        market.depositLendToken(address(dai), depositVault);
+        vm.stopPrank();
+
+        uint256 daiMarketBalance = dai.balanceOf(address(market));
+        console.log("daiMarketBalance:", daiMarketBalance);
+
+        // User tries to borrow within their availabkle collateral
+        vm.startPrank(user);
+        market.borrow(address(dai), borrowAmount);
+        vm.stopPrank();
+
+        // Assert that the user received the correct amount of borrowed tokens
+        uint256 userBalance = dai.balanceOf(user);
+        assertEq(
+            userBalance,
+            initialDaiBalance + borrowAmount,
+            "User should have received the correct amount of borrowed tokens"
         );
     }
 }

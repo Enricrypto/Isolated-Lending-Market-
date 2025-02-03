@@ -61,7 +61,7 @@ contract Market {
         address indexed user,
         address indexed borrowableToken,
         uint256 sharesWithdrawn,
-        uint256 tokensReceived
+        uint256 amount
     );
 
     event Borrowed(
@@ -185,13 +185,14 @@ contract Market {
         // Transfer tokens from the user to the Market contract
         IERC20(borrowableToken).transferFrom(msg.sender, address(this), amount);
 
-        // Approve the Vault to spend Market's tokens
+        // Market approves Vault to spend the tokens
         IERC20(borrowableToken).approve(address(vault), amount);
 
-        // Deposit tokens into Vault on behalf of the user
-        uint256 sharesReceived = vault.deposit(amount, msg.sender);
+        // Market deposits tokens into Vault on behalf of the user
+        uint256 sharesReceived = vault.deposit(amount, address(this));
+        require(sharesReceived > 0, "Deposit failed, no shares received");
 
-        // Track the user's shares in the Market contract
+        // Track the user's shares and tokens in the Market contract
         lendShares[msg.sender][borrowableToken] += sharesReceived;
         lendTokens[msg.sender][borrowableToken] += amount;
 
@@ -211,30 +212,27 @@ contract Market {
         // Get the vault associated with the borrowable token
         Vault vault = Vault(borrowableVaults[borrowableToken]);
 
-        // Ensure the user has enough lend tokens to withdraw
+        // Ensure the user has enough lend tokens to withdraw (from market)
         lendTokens[msg.sender][borrowableToken];
         require(
             lendTokens[msg.sender][borrowableToken] >= amount,
             "Insufficient lend balance"
         );
 
-        // Convert token amount to equivalent shares
-        uint256 sharesToWithdraw = vault.convertToShares(amount);
-        require(sharesToWithdraw > 0, "Invalid share amount");
+        // Withdraw tokens from vault (burn shares, get tokens back)
+        vault.withdraw(amount, msg.sender, address(this));
 
-        // Wikthdraw tokens from vault (burn shares, get tokens back)
-        uint256 tokensReceived = vault.withdraw(amount, msg.sender, msg.sender);
-
-        // Update user's share & token balance in Market contract
+        // Update user's share & token balance in the Market contract
+        uint256 sharesToWithdraw = vault.convertToShares(amount); // Convert the assets withdrawn to shares
         lendShares[msg.sender][borrowableToken] -= sharesToWithdraw;
-        lendTokens[msg.sender][borrowableToken] -= tokensReceived;
+        lendTokens[msg.sender][borrowableToken] -= amount;
 
         // Emit event for logging
         emit LendTokenWithdrawn(
             msg.sender,
             borrowableToken,
             sharesToWithdraw,
-            tokensReceived
+            amount
         );
     }
 
@@ -245,29 +243,36 @@ contract Market {
             "Borrowable asset not supported"
         );
 
-        Vault vault = Vault(borrowableVaults[borrowableToken]);
-
         // Get the user's collateral value
         uint256 userCollateralValue = getTotalCollateralValue(msg.sender);
 
-        // Calculate the max borrowable amount
-        uint256 maxBorrow = userCollateralValue; // This is the borrowing power
+        // Calculate the max borrowable amount (LTV)
+        uint256 maxBorrowAmount = userCollateralValue;
 
         // Ensure the user is not borrowing more than allowed
-        require(amount <= maxBorrow, "Borrow amount exceeds LTV limit");
+        require(amount <= maxBorrowAmount, "Borrow amount exceeds LTV limit");
+
+        Vault vault = Vault(borrowableVaults[borrowableToken]);
 
         // Ensure the vault has enough borrowable funds to lend
-        uint256 availableFunds = vault.totalAssets(); // Check vault balance
+        uint256 availableFunds = vault.totalAssets(); // Get the vault's balance in tokens
         require(availableFunds >= amount, "Insufficient funds in vault");
+
+        uint256 marketShares = vault.balanceOf(address(this));
+        require(marketShares > 0, "Market contract owns no shares");
+
+        // Withdraw from the Vault (this will handle internal accounting correctly)
+        vault.withdraw(amount, msg.sender, address(this));
 
         // Update borrowed amount tracking
         borrowedAmount[msg.sender][borrowableToken] += amount;
 
-        // Withdraw from the Vault (this will handle internal accounting correctly)
-        vault.withdraw(amount, address(this), address(this));
-
-        // Transfer the borrowed amount to the borrower
-        IERC20(borrowableToken).transfer(msg.sender, amount);
+        // Ensure the vault's funds are updated correctly (funds should decrease)
+        uint256 updatedVaultFunds = vault.totalAssets();
+        require(
+            updatedVaultFunds < availableFunds,
+            "Funds have not been updated"
+        );
 
         // Emit event for borrowed
         emit Borrowed(msg.sender, borrowableToken, amount);
@@ -305,15 +310,35 @@ contract Market {
             ];
             if (userCollateralAmount > 0) {
                 uint256 ltvRatio = getLTVRatio(collateralToken); // LTV per collateral token
-                uint256 collateralValue = userCollateralAmount; // Add oracle price fetch LATER
+                uint8 collateralDecimals = getTokenDecimals(collateralToken); // Get collateral token decimals
+
+                uint256 collateralValue = userCollateralAmount;
+
+                // If the collateral token has less decimals than DAI (18 decimals), adjust it
+                if (collateralDecimals < 18) {
+                    collateralValue =
+                        collateralValue *
+                        (10 ** (18 - collateralDecimals)); // Scale it up to match DAI's 18 decimals
+                } else if (collateralDecimals > 18) {
+                    collateralValue =
+                        collateralValue /
+                        (10 ** (collateralDecimals - 18)); // Scale it down if more than 18 decimals
+                }
+
+                // Add the collateral value to the total borrowing power, considering LTV
                 totalBorrowingPower += (collateralValue * ltvRatio) / 100;
             }
         }
+
         return totalBorrowingPower;
     }
 
     // Function that returns the list of collateral tokens
     function getCollateralTokens() public view returns (address[] memory) {
         return collateralTokens;
+    }
+
+    function getTokenDecimals(address token) public view returns (uint8) {
+        return IERC20Metadata(token).decimals();
     }
 }
