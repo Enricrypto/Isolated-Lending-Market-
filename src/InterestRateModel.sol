@@ -1,47 +1,88 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract interestRateModel {
-    // Interest Rate Model Constants
-    uint256 public baseRate; // Base rate in percentage (i.e.: 2% = 2e16)
-    uint256 public slope; // Slope of the rate curve (i.e.: 10% per full utilization = 10e16)
+import "./PriceOracle.sol";
 
-    constructor(uint256 _baseRate, uint256 _slope) {
+contract InterestRateModel {
+    uint256 public baseRate; // // Base interest rate (minimum rate applied to all loans)
+    uint256 public slope; // Slope of the rate curve (i.e.: 10% per full utilization = 10e16)
+    uint256 public priceFactor; // Weight for price impact
+    uint256 public supplyFactor; // Weight for supply-demand impact
+
+    PriceOracle public priceOracle;
+    address public owner;
+
+    mapping(address => uint256) public totalSupply;
+    mapping(address => uint256) public totalBorrows;
+    mapping(address => int256) public lastPrice;
+
+    event InterestRateUpdated(address indexed asset, uint256 rate);
+
+    constructor(
+        address _priceOracle,
+        uint256 _baseRate,
+        uint256 _slope,
+        uint256 _priceFactor,
+        uint256 _supplyFactor
+    ) {
+        priceOracle = PriceOracle(_priceOracle);
         baseRate = _baseRate;
         slope = _slope;
+        priceFactor = _priceFactor;
+        supplyFactor = _supplyFactor;
+        owner = msg.sender;
     }
 
-    // Function to get the utilization rate (for example, total borrowed / total liquidity)
-    function getUtilizationRate(
-        uint256 totalBorrowed,
-        uint256 totalLiquidity
-    ) public pure returns (uint256) {
-        if (totalLiquidity == 0) return 0; // Prevent division by zero
-        return (totalBorrowed * 1e18) / totalLiquidity; // Returns utilization as a value between 0 and 1e18
+    modifier onlyOwner() {
+        require(msg.sender == owner);
+        _;
     }
 
-    // Function to get the dynamic interest rate based on utilization
-    function getDynamicBorrowRate(
-        uint256 totalBorrowed,
-        uint256 totalLiquidity
-    ) public view returns (uint256) {
-        // Get the utilization rate based on borrowed vs total liquidity
-        uint256 utilization = getUtilizationRate(totalBorrowed, totalLiquidity);
+    function setBaseRate(uint256 _newBaseRate) external onlyOwner {
+        baseRate = _newBaseRate;
+    }
 
-        // Ensure utilization is within a safe range [0, 1e18]
-        require(utilization <= 1e18, "Utilization rate cannot exceed 100%");
+    function setSlope(uint256 _newSlope) external onlyOwner {
+        slope = _newSlope;
+    }
 
-        // Calculate the dynmaic borrow rate
-        uint256 rate = baseRate + (slope * utilization) / 1e18;
+    function getUtilizationRate(address asset) public view returns (uint256) {
+        if (totalSupply[asset] == 0) return 0;
+        return (totalBorrows[asset] * 1e18) / totalSupply[asset];
+    }
+
+    function getPriceVolatility(address asset) public view returns (uint256) {
+        int256 latestPrice = priceOracle.getLatestPrice(asset);
+        if (lastPrice[asset] == 0) return 0;
+        uint256 volatility = abs(int256(lastPrice[asset]) - latestPrice);
+        return volatility;
+    }
+
+    function getSupplyDemandRatio(address asset) public view returns (uint256) {
+        if (totalSupply[asset] == 0) return 0;
+        return
+            ((totalSupply[asset] - totalBorrows[asset]) * 1e18) /
+            totalSupply[asset];
+    }
+
+    function getDynamicBorrowRate(address asset) public view returns (uint256) {
+        uint256 utilization = getUtilizationRate(asset);
+        uint256 priceVolatility = getPriceVolatility(asset);
+        uint256 supplyDemandRatio = getSupplyDemandRatio(asset);
+
+        uint256 rate = baseRate +
+            ((slope * utilization) / 1e18) +
+            ((priceFactor * priceVolatility) / 1e18) +
+            ((supplyFactor * supplyDemandRatio) / 1e18);
+
         return rate;
     }
 
-    // Function to calculate interest earned by lenders (same as borrowers)
-    function getDynamicLenderrate(
-        uint256 totalBorrowed,
-        uint256 totalLiquidity
-    ) public view returns (uint256) {
-        // Lender interest rate could be based on o adifferent slope but it typically mirrors the borrow rate
-        return getDynamicBorrowRate(totalBorrowed, totalLiquidity);
+    function updateLastPrice(address asset) external {
+        lastPrice[asset] = int256(priceOracle.getLatestPrice(asset));
+    }
+
+    function abs(int256 x) private pure returns (uint256) {
+        return x < 0 ? uint256(-x) : uint256(x);
     }
 }
