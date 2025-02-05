@@ -2,9 +2,14 @@
 pragma solidity ^0.8.0;
 
 import "./Vault.sol";
+import "./InterestRateModel.sol";
+import "./PriceOracle.sol";
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 
 contract Market {
+    InterestRateModel public interestRateModel;
+    PriceOracle public priceOracle;
+
     // Mapping to track user collateral balances for each collateral token
     mapping(address => mapping(address => uint256))
         public userCollateralBalances;
@@ -15,12 +20,20 @@ contract Market {
     // Mapping for borrowable token vaults (ERC4626) for this market
     mapping(address => address) public borrowableVaults; // Borrowable token -> Vault address
 
-    // Mapping to track users' borrowed amounts for each borrowable token
+    // Mapping to track users' borrowed principal amount
     mapping(address => mapping(address => uint256)) public borrowedAmount; // User -> Token -> Amount
 
+    // Mapping to track the last interest rate at the time of borrowing
+    mapping(address => mapping(address => uint256)) public borrowRateAtTime; // User -> Token -> Rate
+
+    // Mapping to track the last update time for interest calculation
+    mapping(address => mapping(address => uint256)) public borrowTimestamp; // User -> Token -> Timestamp
+
+    // Mapping to track the amount of interest accumulated
+    mapping(address => mapping(address => uint256)) public accumulatedInterest; // User -> Token -> Interest
+
     // Tracks the amount of each loan share lent by each user
-    mapping(address => mapping(address => uint256)) public lendShares;
-    // User -> Loan Share -> Amount
+    mapping(address => mapping(address => uint256)) public lendShares; // User -> Loan Share -> Amount
 
     // Tracks token equivalent of shares
     mapping(address => mapping(address => uint256)) public lendTokens; // User -> Loan Token -> Amount
@@ -67,13 +80,26 @@ contract Market {
     event Borrowed(
         address indexed borrower,
         address indexed borrowableToken,
-        uint256 amount
+        uint256 amount,
+        uint256 borrowRate
     );
 
     // Event for setting LTV ratio for a borrowable token
     event LTVRatioSet(address indexed borrowableToken, uint256 ltvRatio);
 
-    constructor() {}
+    event Repayment(
+        address indexed borrower,
+        address indexed borrowableToken,
+        uint256 totalRepayAmount
+    );
+
+    constructor(
+        InterestRateModel _interestRateModel,
+        PriceOracle _priceOracle
+    ) {
+        interestRateModel = _interestRateModel;
+        priceOracle = _priceOracle;
+    }
 
     // Function to add a borrowable vault to the market
     function addBorrowableVault(
@@ -261,6 +287,23 @@ contract Market {
         uint256 marketShares = vault.balanceOf(address(this));
         require(marketShares > 0, "Market contract owns no shares");
 
+        // Get the utilization rate for the borrowable token
+        uint256 utilization = interestRateModel.getUtilizationRate(
+            borrowableToken
+        );
+
+        // Get the dynamic borrow rate based on utilization from InterestRateModel
+        uint256 borrowRate = interestRateModel.getDynamicBorrowRate(
+            borrowableToken
+        );
+
+        // Store the borrow rate and timestamp at the time of borrowing
+        borrowRateAtTime[msg.sender][borrowableToken] = borrowRate;
+        borrowTimestamp[msg.sender][borrowableToken] = block.timestamp;
+
+        // This would be the interest to be paid on top of the borrow
+        uint256 interestAmount = (amount * borrowRate) / 1e18;
+
         // Withdraw from the Vault (this will handle internal accounting correctly)
         vault.withdraw(amount, msg.sender, address(this));
 
@@ -275,7 +318,7 @@ contract Market {
         );
 
         // Emit event for borrowed
-        emit Borrowed(msg.sender, borrowableToken, amount);
+        emit Borrowed(msg.sender, borrowableToken, amount, borrowRate);
     }
 
     // Function to set the LTV ratio for a collateral token
@@ -312,7 +355,14 @@ contract Market {
                 uint256 ltvRatio = getLTVRatio(collateralToken); // LTV per collateral token
                 uint8 collateralDecimals = getTokenDecimals(collateralToken); // Get collateral token decimals
 
-                uint256 collateralValue = userCollateralAmount;
+                // Get the price of the collateral token from the PriceOracle
+                int256 collateralPrice = priceOracle.getLatestPrice(
+                    collateralToken
+                );
+                require(collateralPrice > 0, "Invalid price from Oracle");
+
+                uint256 collateralValue = userCollateralAmount *
+                    uint256(collateralPrice);
 
                 // If the collateral token has less decimals than DAI (18 decimals), adjust it
                 if (collateralDecimals < 18) {
@@ -329,16 +379,84 @@ contract Market {
                 totalBorrowingPower += (collateralValue * ltvRatio) / 100;
             }
         }
-
         return totalBorrowingPower;
     }
 
+    // Function to calculate the interests accrued by a borrower
+    function calculateAccruedInterest(
+        address user,
+        address borrowableToken
+    ) public view returns (uint256) {
+        // Get the principal amount borrowed
+        uint256 principal = borrowedAmount[user][borrowableToken];
+
+        // Get the borrow rate at the time of borrowing
+        uint256 borrowRate = borrowRateAtTime[user][borrowableToken];
+
+        // Get the last time when the interest was updated (when the loan was taken)
+        uint256 lastTimestamp = borrowTimestamp[user][borrowableToken];
+
+        // If the loan was taken just now, return 0 interest
+        if (lastTimestamp == 0) return 0;
+
+        // Calculate the time elapsed since the last update
+        uint256 timeElapsed = block.timestamp - lastTimestamp;
+
+        // Calculate the interest based on the elapsed time and the borrow rate
+        // Assume the borrow rate is annual (rate per second)
+        uint256 interest = (principal * borrowRate * timeElapsed) /
+            (365 days * 1e18);
+
+        return interest;
+    }
+
+    function repay(address borrowableToken, uint256 amount) public {
+        // Ensure the user has borrowed this token
+        require(
+            borrowedAmount[msg.sender][borrowableToken] > 0,
+            "No debt to repay"
+        );
+
+        // Calculate the interest accrued
+        uint256 interest = calculateAccruedInterest(
+            msg.sender,
+            borrowableToken
+        );
+
+        // Calculate the total amount to repay (principal + interest)
+        uint256 totalRepayAmount = borrowedAmount[msg.sender][borrowableToken] +
+            interest;
+
+        // Ensure the user is paying the full amount of debt
+        require(
+            amount >= totalRepayAmount,
+            "Repayment amount is less than total debt"
+        );
+
+        // Transfer the repayment amount from the user to the market
+        IERC20(borrowableToken).transferFrom(
+            msg.sender,
+            address(this),
+            totalRepayAmount
+        );
+
+        // Decrease the user's borrowed amount
+        borrowedAmount[msg.sender][borrowableToken] = 0;
+
+        // Optionally, update other debt-related variables (like interest, if you want to compound interest)
+        accumulatedInterest[msg.sender][borrowableToken] = 0;
+
+        // Emit a repayment event
+        emit Repayment(msg.sender, borrowableToken, totalRepayAmount);
+    }
+
+    // ======= HELPER FUNCTIONS ========
     // Function that returns the list of collateral tokens
-    function getCollateralTokens() public view returns (address[] memory) {
+    function getCollateralTokens() internal returns (address[] memory) {
         return collateralTokens;
     }
 
-    function getTokenDecimals(address token) public view returns (uint8) {
+    function getTokenDecimals(address token) internal returns (uint8) {
         return IERC20Metadata(token).decimals();
     }
 }
