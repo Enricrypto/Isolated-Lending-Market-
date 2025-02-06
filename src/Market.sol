@@ -155,6 +155,34 @@ contract Market {
         emit CollateralTokenAdded(collateralToken);
     }
 
+    function removeCollateralToken(address collateralToken) external {
+        require(
+            supportedCollateralTokens[collateralToken],
+            "Token not supported"
+        );
+
+        // Remove from mapping
+        supportedCollateralTokens[collateralToken] = false;
+
+        // Find index in array
+        uint256 index;
+        uint256 length = collateralTokens.length;
+        for (uint256 i = 0; i < length; i++) {
+            if (collateralTokens[i] == collateralToken) {
+                index = i;
+                break;
+            }
+        }
+
+        // Swap with the last element and pop
+        if (index < length - 1) {
+            collateralTokens[index] = collateralTokens[length - 1];
+        }
+        collateralTokens.pop();
+
+        emit CollateralTokenRemoved(collateralToken);
+    }
+
     function depositCollateral(
         address collateralToken,
         uint256 amount
@@ -452,7 +480,7 @@ contract Market {
 
     // ======= HELPER FUNCTIONS ========
     // Function that returns the list of collateral tokens
-    function getCollateralTokens() internal returns (address[] memory) {
+    function getCollateralTokens() public returns (address[] memory) {
         return collateralTokens;
     }
 
