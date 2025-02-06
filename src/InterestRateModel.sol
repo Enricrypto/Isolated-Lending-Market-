@@ -78,6 +78,14 @@ contract InterestRateModel {
         return rate;
     }
 
+    function getLendingRate(address asset) public view returns (uint256) {
+        uint256 utilization = getUtilizationRate(asset);
+        uint256 borrowRate = getDynamicBorrowRate(asset);
+        uint256 reserveFactor = 10e16; // Example: 10% protocol fee
+
+        return (borrowRate * utilization * (1e18 - reserveFactor)) / 1e36;
+    }
+
     function updateLastPrice(address asset) external {
         lastPrice[asset] = int256(priceOracle.getLatestPrice(asset));
     }
