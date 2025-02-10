@@ -32,9 +32,6 @@ contract Market {
     // Mapping to track the amount of interest accumulated
     mapping(address => uint256) public borrowerInterestAccrued; // User -> Interest
 
-    // Mapping to track user deposits into the vault of loan assets
-    mapping(address => uint256) public lenderDeposits; // User -> Amount Lent
-
     // Mapping for Loan-to-Value (LTV) ratios for borrowable tokens
     mapping(address => uint256) public ltvRatios; // Token -> LTV ratio (percentage out of 100)
 
@@ -180,18 +177,6 @@ contract Market {
 
         // Emit an event for logging
         emit CollateralWithdrawn(msg.sender, collateralToken, amount);
-    }
-
-    function updateLenderDeposit(address lender) external {
-        require(loanAssetVault != address(0), "Vault not found");
-
-        Vault vault = Vault(loanAssetVault);
-
-        // Get the lender’s assets in the vault
-        uint256 userAssets = vault.convertToAssets(vault.balanceOf(lender));
-
-        // Update the Market's tracking
-        lenderDeposits[lender] = userAssets;
     }
 
     function borrow(uint256 amount) public {
